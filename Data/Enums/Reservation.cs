@@ -9,10 +9,10 @@ public class Reservation
 
     [Required]
     [MaxLength(150)]
-    public string Title { get; set; } = string.Empty;
 
-    [MaxLength(500)]
-    public string? Purpose { get; set; }
+
+
+    public string Purpose { get; set; } = string.Empty;
 
     public DateTimeOffset StartTime { get; set; }
 

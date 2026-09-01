@@ -1,0 +1,169 @@
+@page "/resources"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+@using Microsoft.EntityFrameworkCore
+@using ReserveFlow.Data
+@using ReserveFlow.Data.Entities
+@using ReserveFlow.Data.Enums
+
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+
+<PageTitle>Find Resources</PageTitle>
+
+<h1>Find Resources</h1>
+<p>Search rooms, workspaces, equipment, and vehicles.</p>
+
+<div class="row mb-4">
+    <div class="col-md-8">
+        <label class="form-label" for="resource-search">
+            Search resources
+        </label>
+
+        <input id="resource-search" class="form-control" placeholder="Search by name or description" @bind="searchTerm"
+               @bind:event="oninput" />
+    </div>
+
+    <div class="col-md-4">
+        <label class="form-label" for="resource-type">
+            Resource type
+        </label>
+
+        <select id="resource-type" class="form-select" @onchange="HandleTypeChange">
+            <option value="">All resource types</option>
+
+            @foreach (var type in Enum.GetValues<ResourceType>())
+            {
+                <option value="@type">@FormatResourceType(type)</option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <p>Loading resources...</p>
+}
+else if (!FilteredResources.Any())
+{
+    <div class="alert alert-info">
+        No resources match your search.
+    </div>
+}
+else
+{
+    <p>@FilteredResources.Count() resources found</p>
+
+    <div class="row g-4">
+        @foreach (var resource in FilteredResources)
+        {
+            <div class="col-md-6 col-xl-4">
+                <article class="card h-100">
+                    <div class="card-body">
+                        <span class="badge text-bg-primary mb-2">
+                            @FormatResourceType(resource.Type)
+                        </span>
+
+                        <h2 class="h5">@resource.Name</h2>
+
+                        <p>@resource.Description</p>
+
+                        <dl>
+                            <dt>Location</dt>
+                            <dd>@resource.Location.Name</dd>
+
+                            <dt>Capacity</dt>
+                            <dd>@resource.Capacity</dd>
+
+                            <dt>Booking</dt>
+                            <dd>@FormatApprovalMode(resource.ApprovalMode)</dd>
+                        </dl>
+
+                        @if (resource.Amenities.Count > 0)
+                        {
+                            <div class="mb-3">
+                                @foreach (var amenity in resource.Amenities)
+                                {
+                                    <span class="badge text-bg-light me-1">
+                                        @amenity.Name
+                                    </span>
+                                }
+                            </div>
+                        }
+
+                        <a class="btn btn-primary" href="@($"/resources/{resource.Id}")">
+                            View resource
+                        </a>
+                    </div>
+                </article>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<Resource> resources = [];
+    private string searchTerm = string.Empty;
+    private ResourceType? selectedType;
+    private bool isLoading = true;
+
+    /// <summary>
+    /// Loads active resources and their related location and amenities
+    /// when the component first opens.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        await using var dbContext =
+            await DbContextFactory.CreateDbContextAsync();
+
+        resources = await dbContext.Resources
+            .AsNoTracking()
+            .Include(resource => resource.Location)
+            .Include(resource => resource.Amenities)
+            .Where(resource => resource.IsActive)
+            .OrderBy(resource => resource.Name)
+            .ToListAsync();
+
+        isLoading = false;
+    }
+
+    // Filters the already-loaded resources whenever the search text
+    // or selected resource type changes.
+    private IEnumerable<Resource> FilteredResources =>
+        resources.Where(resource =>
+            (!selectedType.HasValue ||
+             resource.Type == selectedType.Value) &&
+            (string.IsNullOrWhiteSpace(searchTerm) ||
+             resource.Name.Contains(
+                 searchTerm,
+                 StringComparison.OrdinalIgnoreCase) ||
+             (resource.Description?.Contains(
+                 searchTerm,
+                 StringComparison.OrdinalIgnoreCase) ?? false)));
+
+    /// <summary>
+    /// Converts the selected HTML value into a nullable ResourceType.
+    /// </summary>
+    private void HandleTypeChange(ChangeEventArgs eventArgs)
+    {
+        var value = eventArgs.Value?.ToString();
+
+        selectedType = Enum.TryParse<ResourceType>(value, out var type)
+            ? type
+            : null;
+    }
+
+    private static string FormatResourceType(ResourceType type) =>
+        type switch
+        {
+            ResourceType.MeetingRoom => "Meeting Room",
+            ResourceType.Workspace => "Workspace",
+            ResourceType.Equipment => "Equipment",
+            ResourceType.Vehicle => "Vehicle",
+            _ => type.ToString()
+        };
+
+    private static string FormatApprovalMode(ApprovalMode mode) =>
+        mode == ApprovalMode.Instant
+            ? "Instant confirmation"
+            : "Manager approval required";
+}

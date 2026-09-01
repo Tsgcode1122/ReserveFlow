@@ -19,9 +19,11 @@ public sealed class ReservationService(ApplicationDbContext dbContext)
         string userId,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.Title))
+        if (string.IsNullOrWhiteSpace(request.Purpose))
         {
-            return new ReservationResult(false, "A reservation title is required.");
+            return new ReservationResult(
+                false,
+                "Please provide the purpose of this reservation.");
         }
 
         if (request.StartTime < DateTimeOffset.UtcNow)
@@ -102,8 +104,8 @@ public sealed class ReservationService(ApplicationDbContext dbContext)
         {
             ResourceId = request.ResourceId,
             UserId = userId,
-            Title = request.Title.Trim(),
-            Purpose = request.Purpose?.Trim(),
+
+            Purpose = request.Purpose.Trim(),
             StartTime = request.StartTime,
             EndTime = request.EndTime,
             AttendeeCount = request.AttendeeCount,

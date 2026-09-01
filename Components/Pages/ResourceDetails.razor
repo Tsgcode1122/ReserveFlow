@@ -1,0 +1,254 @@
+@page "/resources/{Id:guid}"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using ReserveFlow.Data
+@using ReserveFlow.Data.Entities
+@using ReserveFlow.Services.Reservations
+
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+@inject IReservationService ReservationService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ILogger<ResourceDetails> Logger
+<PageTitle>Resource Details</PageTitle>
+
+@if (isLoading)
+{
+    <p>Loading resource...</p>
+}
+else if (resource is null)
+{
+    <div class="alert alert-danger">
+        The requested resource could not be found.
+    </div>
+
+    <a class="btn btn-secondary" href="/resources">
+        Return to resources
+    </a>
+}
+else
+{
+    <div class="row g-4">
+        <section class="col-lg-7">
+            <a href="/resources">← Back to resources</a>
+
+            <h1 class="mt-3">@resource.Name</h1>
+            <p>@resource.Description</p>
+
+            <dl>
+                <dt>Location</dt>
+                <dd>@resource.Location.Name</dd>
+
+                <dt>Capacity</dt>
+                <dd>@resource.Capacity</dd>
+
+                <dt>Resource type</dt>
+                <dd>@resource.Type</dd>
+
+                <dt>Approval</dt>
+                <dd>
+                    @(resource.ApprovalMode == Data.Enums.ApprovalMode.Instant
+                        ? "Instant confirmation"
+                        : "Manager approval required")
+                </dd>
+            </dl>
+
+            <h2 class="h5">Amenities</h2>
+
+            @if (resource.Amenities.Count == 0)
+            {
+                <p>No amenities are listed.</p>
+            }
+            else
+            {
+                <ul>
+                    @foreach (var amenity in resource.Amenities)
+                    {
+                        <li>@amenity.Name</li>
+                    }
+                </ul>
+            }
+        </section>
+
+        <section class="col-lg-5">
+            <div class="card">
+                <div class="card-body">
+                    <h2 class="h4">Reserve this resource</h2>
+
+                    @if (!string.IsNullOrWhiteSpace(resultMessage))
+                    {
+                        <div class="alert @resultCssClass" role="alert">
+                            @resultMessage
+                        </div>
+                    }
+
+                    <EditForm Model="bookingForm" OnValidSubmit="SubmitReservationAsync">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+
+                        <div class="mb-3">
+                            <label class="form-label" for="booking-purpose">
+                                Reservation purpose
+                            </label>
+
+                            <InputTextArea id="booking-purpose" class="form-control"
+                                           placeholder="Describe what this resource will be used for"
+                                           @bind-Value="bookingForm.Purpose" />
+
+                            <ValidationMessage For="@(() => bookingForm.Purpose)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="start-time">
+                                Start date and time
+                            </label>
+
+                            <InputDate id="start-time" class="form-control" Type="InputDateType.DateTimeLocal"
+                                       @bind-Value="bookingForm.StartTime" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="end-time">
+                                End date and time
+                            </label>
+
+                            <InputDate id="end-time" class="form-control" Type="InputDateType.DateTimeLocal"
+                                       @bind-Value="bookingForm.EndTime" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="attendee-count">
+                                Number of attendees
+                            </label>
+
+                            <InputNumber id="attendee-count" class="form-control" @bind-Value="bookingForm.AttendeeCount" />
+
+                            <ValidationMessage For="@(() => bookingForm.AttendeeCount)" />
+                        </div>
+
+                        <button class="btn btn-primary" type="submit" disabled="@isSubmitting">
+                            @(isSubmitting
+                                ? "Submitting..."
+                                : "Submit reservation")
+                        </button>
+                    </EditForm>
+                </div>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public Guid Id { get; set; }
+
+    private Resource? resource;
+    private string? userId;
+    private bool isLoading = true;
+    private bool isSubmitting;
+    private string? resultMessage;
+    private string resultCssClass = "alert-danger";
+
+    private readonly BookingFormModel bookingForm = new();
+
+    /// <summary>
+    /// Loads the selected resource and obtains the signed-in user's ID.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        await using var dbContext =
+            await DbContextFactory.CreateDbContextAsync();
+
+        resource = await dbContext.Resources
+            .AsNoTracking()
+            .Include(resource => resource.Location)
+            .Include(resource => resource.Amenities)
+            .SingleOrDefaultAsync(resource => resource.Id == Id);
+
+        var authenticationState =
+            await AuthenticationStateProvider.GetAuthenticationStateAsync();
+
+        userId = authenticationState.User.FindFirstValue(
+            ClaimTypes.NameIdentifier);
+
+        isLoading = false;
+    }
+
+    /// <summary>
+    /// Sends the validated form to the reservation service and displays
+    /// the result returned by the business logic.
+    /// </summary>
+    /// <summary>
+    /// Converts the selected times to UTC, submits the reservation,
+    /// and handles database errors without crashing the Blazor circuit.
+    /// </summary>
+    private async Task SubmitReservationAsync()
+    {
+        if (resource is null || string.IsNullOrWhiteSpace(userId))
+        {
+            resultMessage = "You must be signed in to create a reservation.";
+            resultCssClass = "alert-danger";
+            return;
+        }
+
+        isSubmitting = true;
+        resultMessage = null;
+
+        try
+        {
+            var request = new CreateReservationRequest(
+                resource.Id,
+                bookingForm.Purpose,
+
+                // PostgreSQL stores these reservation timestamps in UTC.
+                bookingForm.StartTime.ToUniversalTime(),
+                bookingForm.EndTime.ToUniversalTime(),
+
+                bookingForm.AttendeeCount);
+
+            var result = await ReservationService.CreateAsync(request, userId);
+
+            resultMessage = result.Message;
+            resultCssClass = result.Succeeded
+                ? "alert-success"
+                : "alert-danger";
+        }
+        catch (Exception exception)
+        {
+            // Record the technical error in the terminal while showing the
+            // user a safe, understandable message.
+            Logger.LogError(
+                exception,
+                "An error occurred while creating a reservation.");
+
+            resultMessage =
+                "We could not complete your reservation. Please try again.";
+
+            resultCssClass = "alert-danger";
+        }
+        finally
+        {
+            // Ensures the button becomes available even when an error occurs.
+            isSubmitting = false;
+        }
+    }
+    private sealed class BookingFormModel
+    {
+        [Required(ErrorMessage = "Please provide a reservation purpose.")]
+        [StringLength(500, MinimumLength = 5)]
+        public string Purpose { get; set; } = string.Empty;
+
+        [Required]
+        public DateTimeOffset StartTime { get; set; }
+            = DateTimeOffset.Now.AddDays(1).Date.AddHours(9);
+
+        [Required]
+        public DateTimeOffset EndTime { get; set; }
+            = DateTimeOffset.Now.AddDays(1).Date.AddHours(10);
+
+        [Range(1, 1000)]
+        public int AttendeeCount { get; set; } = 1;
+    }
+}

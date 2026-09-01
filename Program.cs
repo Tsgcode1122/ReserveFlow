@@ -29,7 +29,8 @@ var connectionString =
     ?? throw new InvalidOperationException(
         "Connection string 'DefaultConnection' not found.");
 
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
+// Creates short-lived database contexts for Blazor components.
+builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
