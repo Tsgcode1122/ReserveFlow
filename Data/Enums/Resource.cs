@@ -26,6 +26,9 @@ public class Resource
     public Location Location { get; set; } = null!;
 
     public bool IsActive { get; set; } = true;
-
+    public ICollection<Amenity> Amenities { get; set; } = new List<Amenity>();
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    // Contains the current and historical reservations for this resource.
+    public ICollection<Reservation> Reservations { get; set; }
+        = new List<Reservation>();
 }

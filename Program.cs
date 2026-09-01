@@ -4,6 +4,8 @@ using Microsoft.EntityFrameworkCore;
 using ReserveFlow.Components;
 using ReserveFlow.Components.Account;
 using ReserveFlow.Data;
+using ReserveFlow.Services.Reservations;
+using ReserveFlow.Data.Seed;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,9 +44,14 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     .AddDefaultTokenProviders();
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
-
+// Makes the reservation business logic available to Blazor components.
+builder.Services.AddScoped<IReservationService, ReservationService>();
 var app = builder.Build();
-
+// Adds demonstration data only in the development environment.
+if (app.Environment.IsDevelopment())
+{
+    await DbSeeder.SeedAsync(app.Services);
+}
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
