@@ -31,4 +31,14 @@ public class Resource
     // Contains the current and historical reservations for this resource.
     public ICollection<Reservation> Reservations { get; set; }
         = new List<Reservation>();
+    // Informational notices displayed in the resource's Policies tab.
+    public ICollection<ResourcePolicyNotice> PolicyNotices { get; set; }
+        = new List<ResourcePolicyNotice>();
+    // Contains reviews submitted for this resource.
+    public ICollection<ResourceReview> Reviews { get; set; }
+        = new List<ResourceReview>();
+    // Defines the resource's normal weekly operating schedule.
+    public ICollection<ResourceOperatingHour> OperatingHours { get; set; }
+        = new List<ResourceOperatingHour>();
+
 }

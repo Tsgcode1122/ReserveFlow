@@ -6,6 +6,10 @@ using ReserveFlow.Components.Account;
 using ReserveFlow.Data;
 using ReserveFlow.Services.Reservations;
 using ReserveFlow.Data.Seed;
+using ReserveFlow.Services.Reviews;
+using ReserveFlow.Services.Availability;
+
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -47,6 +51,15 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
 // Makes the reservation business logic available to Blazor components.
 builder.Services.AddScoped<IReservationService, ReservationService>();
+
+
+// Provides review validation and creation logic to Blazor components.
+builder.Services.AddScoped<IReviewService, ReviewService>();
+// Calculates monthly availability for the resource calendar.
+builder.Services.AddScoped<IAvailabilityService, AvailabilityService>();
+
+
+
 var app = builder.Build();
 // Adds demonstration data only in the development environment.
 if (app.Environment.IsDevelopment())

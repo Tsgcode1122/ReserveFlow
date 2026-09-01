@@ -22,6 +22,10 @@ public static class DbSeeder
         // Stop if the sample resources were previously inserted.
         if (await dbContext.Resources.AnyAsync())
         {
+            // Seed newer development data even when the original resources
+            // were added during an earlier application run.
+            await SeedPolicyNoticesAsync(dbContext);
+            await SeedOperatingHoursAsync(dbContext);
             return;
         }
 
@@ -173,5 +177,136 @@ public static class DbSeeder
             fleetVan);
 
         await dbContext.SaveChangesAsync();
+        await SeedPolicyNoticesAsync(dbContext);
+    }
+    /// <summary>
+    /// Adds informational policy notices to the sample resources.
+    /// This method does not create duplicates when the application restarts.
+    /// </summary>
+    /// <summary>
+    /// Creates a weekly operating schedule for each sample resource.
+    /// Weekdays are open from 7:00 AM until 10:00 PM, while weekends
+    /// are marked as closed.
+    /// </summary>
+    private static async Task SeedOperatingHoursAsync(
+        ApplicationDbContext dbContext)
+    {
+        // Prevent duplicate weekday schedules during later application runs.
+        if (await dbContext.ResourceOperatingHours.AnyAsync())
+        {
+            return;
+        }
+
+        var resources = await dbContext.Resources.ToListAsync();
+        var schedules = new List<ResourceOperatingHour>();
+
+        foreach (var resource in resources)
+        {
+            foreach (var day in Enum.GetValues<DayOfWeek>())
+            {
+                var isWeekend =
+                    day is DayOfWeek.Saturday or DayOfWeek.Sunday;
+
+                schedules.Add(new ResourceOperatingHour
+                {
+                    ResourceId = resource.Id,
+                    DayOfWeek = day,
+
+                    // Closed days still receive default time values, but
+                    // availability logic will ignore them when IsClosed is true.
+                    OpenTime = isWeekend
+                        ? TimeOnly.MinValue
+                        : new TimeOnly(7, 0),
+
+                    CloseTime = isWeekend
+                        ? TimeOnly.MinValue
+                        : new TimeOnly(22, 0),
+
+                    IsClosed = isWeekend
+                });
+            }
+        }
+
+        dbContext.ResourceOperatingHours.AddRange(schedules);
+        await dbContext.SaveChangesAsync();
+    }
+    private static async Task SeedPolicyNoticesAsync(
+        ApplicationDbContext dbContext)
+    {
+        if (await dbContext.ResourcePolicyNotices.AnyAsync())
+        {
+            return;
+        }
+
+        var executiveBoardroom = await dbContext.Resources
+            .SingleAsync(resource =>
+                resource.Name == "Executive Boardroom");
+
+        var innovationHub = await dbContext.Resources
+            .SingleAsync(resource =>
+                resource.Name == "Innovation Hub — Room 3A");
+
+        var fleetVan = await dbContext.Resources
+            .SingleAsync(resource =>
+                resource.Name == "Fleet Van — MV-007");
+
+        var notices = new[]
+        {
+        new ResourcePolicyNotice
+        {
+            ResourceId = executiveBoardroom.Id,
+            Message = "Bookings require department-head approval.",
+            DisplayOrder = 1
+        },
+        new ResourcePolicyNotice
+        {
+            ResourceId = executiveBoardroom.Id,
+            Message = "Catering must be ordered at least 48 hours in advance.",
+            DisplayOrder = 2
+        },
+        new ResourcePolicyNotice
+        {
+            ResourceId = executiveBoardroom.Id,
+            Message = "Setup and teardown are included in the booking time.",
+            DisplayOrder = 3
+        },
+        new ResourcePolicyNotice
+        {
+            ResourceId = executiveBoardroom.Id,
+            Message = "Please leave the room in its original condition.",
+            DisplayOrder = 4
+        },
+
+        new ResourcePolicyNotice
+        {
+            ResourceId = innovationHub.Id,
+            Message = "Return movable furniture to its original arrangement.",
+            DisplayOrder = 1
+        },
+        new ResourcePolicyNotice
+        {
+            ResourceId = innovationHub.Id,
+            Message = "Food and uncovered drinks are not permitted.",
+            DisplayOrder = 2
+        },
+
+        new ResourcePolicyNotice
+        {
+            ResourceId = fleetVan.Id,
+            Message = "Only approved organizational drivers may operate this vehicle.",
+            DisplayOrder = 1
+        },
+        new ResourcePolicyNotice
+        {
+            ResourceId = fleetVan.Id,
+            Message = "Return the vehicle with at least half a tank of fuel.",
+            DisplayOrder = 2
+        }
+    };
+
+        dbContext.ResourcePolicyNotices.AddRange(notices);
+        await dbContext.SaveChangesAsync();
+        await SeedPolicyNoticesAsync(dbContext);
+        await SeedOperatingHoursAsync(dbContext);
     }
 }

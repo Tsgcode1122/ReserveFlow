@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using ReserveFlow.Data;
@@ -11,9 +12,11 @@ using ReserveFlow.Data;
 namespace ReserveFlow.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260901182359_AddResourceReviews")]
+    partial class AddResourceReviews
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -291,11 +294,6 @@ namespace ReserveFlow.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<string>("TimeZoneId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
                     b.HasKey("Id");
 
                     b.ToTable("Locations");
@@ -381,35 +379,6 @@ namespace ReserveFlow.Data.Migrations
                     b.HasIndex("LocationId");
 
                     b.ToTable("Resources");
-                });
-
-            modelBuilder.Entity("ReserveFlow.Data.Entities.ResourceOperatingHour", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<TimeOnly>("CloseTime")
-                        .HasColumnType("time without time zone");
-
-                    b.Property<int>("DayOfWeek")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("IsClosed")
-                        .HasColumnType("boolean");
-
-                    b.Property<TimeOnly>("OpenTime")
-                        .HasColumnType("time without time zone");
-
-                    b.Property<Guid>("ResourceId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ResourceId", "DayOfWeek")
-                        .IsUnique();
-
-                    b.ToTable("ResourceOperatingHours");
                 });
 
             modelBuilder.Entity("ReserveFlow.Data.Entities.ResourcePolicyNotice", b =>
@@ -625,17 +594,6 @@ namespace ReserveFlow.Data.Migrations
                     b.Navigation("Location");
                 });
 
-            modelBuilder.Entity("ReserveFlow.Data.Entities.ResourceOperatingHour", b =>
-                {
-                    b.HasOne("ReserveFlow.Data.Entities.Resource", "Resource")
-                        .WithMany("OperatingHours")
-                        .HasForeignKey("ResourceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Resource");
-                });
-
             modelBuilder.Entity("ReserveFlow.Data.Entities.ResourcePolicyNotice", b =>
                 {
                     b.HasOne("ReserveFlow.Data.Entities.Resource", "Resource")
@@ -708,8 +666,6 @@ namespace ReserveFlow.Data.Migrations
 
             modelBuilder.Entity("ReserveFlow.Data.Entities.Resource", b =>
                 {
-                    b.Navigation("OperatingHours");
-
                     b.Navigation("PolicyNotices");
 
                     b.Navigation("Reservations");

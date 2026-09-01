@@ -52,7 +52,66 @@ public class ApplicationDbContext(
             .WithMany(user => user.Reservations)
             .HasForeignKey(reservation => reservation.UserId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // Connects each policy notice to its resource. These notices are
+        // informational and are not automatically enforced during booking.
+        builder.Entity<ResourcePolicyNotice>()
+            .HasOne(notice => notice.Resource)
+            .WithMany(resource => resource.PolicyNotices)
+            .HasForeignKey(notice => notice.ResourceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Ensures that each reservation can produce only one review.
+        builder.Entity<ResourceReview>()
+            .HasIndex(review => review.ReservationId)
+            .IsUnique();
+
+        // Connects reviews to the resource being reviewed.
+        builder.Entity<ResourceReview>()
+            .HasOne(review => review.Resource)
+            .WithMany(resource => resource.Reviews)
+            .HasForeignKey(review => review.ResourceId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Connects reviews to the user who submitted them.
+        builder.Entity<ResourceReview>()
+            .HasOne(review => review.User)
+            .WithMany(user => user.Reviews)
+            .HasForeignKey(review => review.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Creates the one-to-one relationship between a reservation
+        // and the review produced from it.
+        builder.Entity<ResourceReview>()
+            .HasOne(review => review.Reservation)
+            .WithOne(reservation => reservation.Review)
+            .HasForeignKey<ResourceReview>(review => review.ReservationId)
+            .OnDelete(DeleteBehavior.Restrict);
+        // Connects each operating-hours record to its resource.
+        builder.Entity<ResourceOperatingHour>()
+            .HasOne(schedule => schedule.Resource)
+            .WithMany(resource => resource.OperatingHours)
+            .HasForeignKey(schedule => schedule.ResourceId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Prevents a resource from having duplicate schedules for one weekday.
+        builder.Entity<ResourceOperatingHour>()
+            .HasIndex(schedule => new
+            {
+                schedule.ResourceId,
+                schedule.DayOfWeek
+            })
+            .IsUnique();
     }
     // Represents all resource booking records.
     public DbSet<Reservation> Reservations => Set<Reservation>();
+    // Represents informational policy notices shown to users.
+    public DbSet<ResourcePolicyNotice> ResourcePolicyNotices =>
+        Set<ResourcePolicyNotice>();
+    // Represents ratings and comments submitted for resources.
+    public DbSet<ResourceReview> ResourceReviews =>
+        Set<ResourceReview>();
+    // Represents the weekly operating schedules for resources.
+    public DbSet<ResourceOperatingHour> ResourceOperatingHours =>
+        Set<ResourceOperatingHour>();
 }

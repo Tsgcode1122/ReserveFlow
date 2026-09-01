@@ -1,0 +1,144 @@
+.resource-tabs {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 1px solid #dbe3ef;
+    margin: 1.5rem 0;
+}
+
+.resource-tab {
+    border: 0;
+    border-bottom: 3px solid transparent;
+    background: transparent;
+    padding: 0.75rem 1rem;
+    color: #174a8b;
+}
+
+.resource-tab.active {
+    border-bottom-color: #20a89a;
+    color: #148c82;
+}
+
+.amenity-grid,
+.resource-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+}
+
+.amenity-item,
+.resource-stat-grid > div,
+.policy-list li,
+.review-card {
+    border: 1px solid #dbe3ef;
+    border-radius: 0.75rem;
+    padding: 1rem;
+}
+
+.resource-stat-grid {
+    margin-top: 1rem;
+}
+
+.resource-stat-grid > div {
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+}
+
+.calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.5rem;
+}
+
+.calendar-weekday,
+.calendar-day {
+    text-align: center;
+}
+
+.calendar-day {
+    border-radius: 0.5rem;
+    padding: 0.65rem;
+}
+
+.calendar-day.available {
+    background: #c8f4eb;
+}
+
+.calendar-day.partial {
+    background: #fff0b8;
+}
+
+.calendar-day.booked {
+    background: #ffd6d9;
+}
+
+.calendar-day.closed {
+    background: #e7ebf1;
+    color: #6c7583;
+}
+
+.calendar-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.calendar-legend i {
+    display: inline-block;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
+}
+
+.calendar-legend .available {
+    background: #c8f4eb;
+}
+
+.calendar-legend .partial {
+    background: #fff0b8;
+}
+
+.calendar-legend .booked {
+    background: #ffd6d9;
+}
+
+.calendar-legend .closed {
+    background: #e7ebf1;
+}
+
+.policy-list,
+.review-list {
+    display: grid;
+    gap: 0.75rem;
+    padding: 0;
+    list-style: none;
+}
+
+.review-card span {
+    display: block;
+    color: #67758a;
+}
+
+.review-stars {
+    color: #f5a000;
+    margin: 0.5rem 0;
+}
+
+@media (max-width: 700px) {
+    .resource-tabs {
+        overflow-x: auto;
+    }
+
+    .amenity-grid,
+    .resource-stat-grid {
+        grid-template-columns: 1fr;
+    }
+}

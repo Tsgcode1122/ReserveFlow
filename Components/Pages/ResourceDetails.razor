@@ -7,7 +7,9 @@
 @using ReserveFlow.Data
 @using ReserveFlow.Data.Entities
 @using ReserveFlow.Services.Reservations
+@using ReserveFlow.Services.Availability
 
+@inject IAvailabilityService AvailabilityService
 @inject IDbContextFactory<ApplicationDbContext> DbContextFactory
 @inject IReservationService ReservationService
 @inject AuthenticationStateProvider AuthenticationStateProvider
@@ -71,7 +73,169 @@ else
                 </ul>
             }
         </section>
+        <div class="resource-tabs" role="tablist" aria-label="Resource information">
+            @foreach (var tab in Enum.GetValues<DetailsTab>())
+            {
+                <button type="button" role="tab" class="resource-tab @(selectedTab == tab ? "active" : "")"
+                        aria-selected="@(selectedTab == tab)" @onclick="() => SelectTabAsync(tab)">
+                    @tab
+                </button>
+            }
+        </div>
+        <div class="resource-tab-content">
+            @switch (selectedTab)
+            {
+                case DetailsTab.Overview:
+                    <section role="tabpanel">
+                        <p>@resource.Description</p>
 
+                        <h2 class="h5">Amenities</h2>
+
+                        @if (resource.Amenities.Count == 0)
+                        {
+                            <p>No amenities are listed.</p>
+                        }
+                        else
+                        {
+                            <div class="amenity-grid">
+                                @foreach (var amenity in resource.Amenities
+                                    .OrderBy(amenity => amenity.Name))
+                                {
+                                    <div class="amenity-item">
+                                        @amenity.Name
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <div class="resource-stat-grid">
+                            <div>
+                                <strong>@resource.Capacity</strong>
+                                <span>Maximum capacity</span>
+                            </div>
+
+                            <div>
+                                <strong>@resource.Amenities.Count</strong>
+                                <span>Amenities</span>
+                            </div>
+                        </div>
+                    </section>
+                    break;
+
+                case DetailsTab.Availability:
+                    <section role="tabpanel">
+                        <div class="calendar-header">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Previous month"
+                                    @onclick="ShowPreviousMonthAsync">
+                                ←
+                            </button>
+
+                            <strong>
+                                @displayedMonth.ToString("MMMM yyyy")
+                            </strong>
+
+                            <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Next month"
+                                    @onclick="ShowNextMonthAsync">
+                                →
+                            </button>
+                        </div>
+
+                        @if (isLoadingAvailability)
+                        {
+                            <p>Loading availability...</p>
+                        }
+                        else
+                        {
+                            <div class="calendar-grid">
+                                @foreach (var dayName in
+                                    new[] { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" })
+                                {
+                                    <strong class="calendar-weekday">
+                                        @dayName
+                                    </strong>
+                                }
+
+                                @for (var blank = 0;
+                                    blank < (int)displayedMonth.DayOfWeek;
+                                    blank++)
+                                {
+                                    <span></span>
+                                }
+
+                                @foreach (var day in monthlyAvailability)
+                                {
+                                    <div class="calendar-day @GetStatusClass(day.Status)" title="@day.Status">
+                                        <span>@day.Date.Day</span>
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="calendar-legend">
+                                <span><i class="available"></i> Available</span>
+                                <span><i class="partial"></i> Partial</span>
+                                <span><i class="booked"></i> Booked</span>
+                                <span><i class="closed"></i> Closed</span>
+                            </div>
+                        }
+                    </section>
+                    break;
+
+                case DetailsTab.Policies:
+                    <section role="tabpanel">
+                        @if (resource.PolicyNotices.Count == 0)
+                        {
+                            <p>No policy notices are currently listed.</p>
+                        }
+                        else
+                        {
+                            <ul class="policy-list">
+                                @foreach (var notice in resource.PolicyNotices
+                                    .Where(notice => notice.IsActive)
+                                    .OrderBy(notice => notice.DisplayOrder))
+                                {
+                                    <li>@notice.Message</li>
+                                }
+                            </ul>
+                        }
+                    </section>
+                    break;
+
+                case DetailsTab.Reviews:
+                    <section role="tabpanel">
+                        @if (resource.Reviews.Count == 0)
+                        {
+                            <p>No reviews have been submitted yet.</p>
+                        }
+                        else
+                        {
+                            <div class="review-list">
+                                @foreach (var review in resource.Reviews
+                                    .OrderByDescending(review => review.CreatedAt))
+                                {
+                                    <article class="review-card">
+                                        <div>
+                                            <strong>
+                                                @(review.User.UserName ?? "ReserveFlow user")
+                                            </strong>
+
+                                            <span>
+                                                @review.CreatedAt.ToString("MMM yyyy")
+                                            </span>
+                                        </div>
+
+                                        <div class="review-stars" aria-label="@($"{review.Rating} out of 5 stars")">
+                                            @GetStars(review.Rating)
+                                        </div>
+
+                                        <p>@review.Comment</p>
+                                    </article>
+                                }
+                            </div>
+                        }
+                    </section>
+                    break;
+            }
+        </div>
         <section class="col-lg-5">
             <div class="card">
                 <div class="card-body">
@@ -152,7 +316,21 @@ else
     private string resultCssClass = "alert-danger";
 
     private readonly BookingFormModel bookingForm = new();
+    private DetailsTab selectedTab = DetailsTab.Overview;
 
+    private DateOnly displayedMonth;
+
+    private IReadOnlyList<DailyAvailability> monthlyAvailability = [];
+
+    private bool isLoadingAvailability;
+
+    private enum DetailsTab
+    {
+        Overview,
+        Availability,
+        Policies,
+        Reviews
+    }
     /// <summary>
     /// Loads the selected resource and obtains the signed-in user's ID.
     /// </summary>
@@ -162,10 +340,14 @@ else
             await DbContextFactory.CreateDbContextAsync();
 
         resource = await dbContext.Resources
-            .AsNoTracking()
-            .Include(resource => resource.Location)
-            .Include(resource => resource.Amenities)
-            .SingleOrDefaultAsync(resource => resource.Id == Id);
+    .AsNoTracking()
+    .AsSplitQuery()
+    .Include(resource => resource.Location)
+    .Include(resource => resource.Amenities)
+    .Include(resource => resource.PolicyNotices)
+    .Include(resource => resource.Reviews)
+        .ThenInclude(review => review.User)
+    .SingleOrDefaultAsync(resource => resource.Id == Id);
 
         var authenticationState =
             await AuthenticationStateProvider.GetAuthenticationStateAsync();
@@ -174,6 +356,21 @@ else
             ClaimTypes.NameIdentifier);
 
         isLoading = false;
+        if (resource is not null)
+        {
+            // Determines the current month at the resource's location.
+            var timeZone = TimeZoneInfo.FindSystemTimeZoneById(
+                resource.Location.TimeZoneId);
+
+            var localNow = TimeZoneInfo.ConvertTime(
+                DateTimeOffset.UtcNow,
+                timeZone);
+
+            displayedMonth = new DateOnly(
+                localNow.Year,
+                localNow.Month,
+                1);
+        }
     }
 
     /// <summary>
@@ -251,4 +448,63 @@ else
         [Range(1, 1000)]
         public int AttendeeCount { get; set; } = 1;
     }
+    /// <summary>
+    /// Changes the visible tab and loads calendar data only when the
+    /// Availability tab is requested.
+    /// </summary>
+    private async Task SelectTabAsync(DetailsTab tab)
+    {
+        selectedTab = tab;
+
+        if (tab == DetailsTab.Availability &&
+            monthlyAvailability.Count == 0)
+        {
+            await LoadAvailabilityAsync();
+        }
+    }
+
+    /// <summary>
+    /// Loads availability for the currently displayed calendar month.
+    /// </summary>
+    private async Task LoadAvailabilityAsync()
+    {
+        if (resource is null)
+        {
+            return;
+        }
+
+        isLoadingAvailability = true;
+
+        try
+        {
+            monthlyAvailability =
+                await AvailabilityService.GetMonthAsync(
+                    resource.Id,
+                    displayedMonth.Year,
+                    displayedMonth.Month);
+        }
+        finally
+        {
+            isLoadingAvailability = false;
+        }
+    }
+
+    private async Task ShowPreviousMonthAsync()
+    {
+        displayedMonth = displayedMonth.AddMonths(-1);
+        await LoadAvailabilityAsync();
+    }
+
+    private async Task ShowNextMonthAsync()
+    {
+        displayedMonth = displayedMonth.AddMonths(1);
+        await LoadAvailabilityAsync();
+    }
+
+    private static string GetStatusClass(
+        DailyAvailabilityStatus status) =>
+        status.ToString().ToLowerInvariant();
+
+    private static string GetStars(int rating) =>
+        $"{new string('★', rating)}{new string('☆', 5 - rating)}";
 }

@@ -20,4 +20,8 @@ public class Location
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public ICollection<Resource> Resources { get; set; } = new List<Resource>();
+
+    [Required]
+    [MaxLength(100)]
+    public string TimeZoneId { get; set; } = "America/New_York";
 }

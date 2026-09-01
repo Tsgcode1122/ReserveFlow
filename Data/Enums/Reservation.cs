@@ -36,4 +36,6 @@ public class Reservation
     public ApplicationUser User { get; set; } = null!;
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    // A completed reservation can produce no more than one review.
+    public ResourceReview? Review { get; set; }
 }
