@@ -111,6 +111,28 @@ public class ApplicationDbContext(
             .WithMany(user => user.ReviewedReservations)
             .HasForeignKey(reservation => reservation.ReviewedById)
             .OnDelete(DeleteBehavior.Restrict);
+        // Connects each notification to its recipient.
+        builder.Entity<Notification>()
+            .HasOne(notification => notification.User)
+            .WithMany(user => user.Notifications)
+            .HasForeignKey(notification => notification.UserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Connects a notification to its related reservation.
+        builder.Entity<Notification>()
+            .HasOne(notification => notification.Reservation)
+            .WithMany(reservation => reservation.Notifications)
+            .HasForeignKey(notification => notification.ReservationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Speeds up loading a user's newest unread notifications.
+        builder.Entity<Notification>()
+            .HasIndex(notification => new
+            {
+                notification.UserId,
+                notification.IsRead,
+                notification.CreatedAt
+            });
     }
     // Represents all resource booking records.
     public DbSet<Reservation> Reservations => Set<Reservation>();
@@ -123,4 +145,6 @@ public class ApplicationDbContext(
     // Represents the weekly operating schedules for resources.
     public DbSet<ResourceOperatingHour> ResourceOperatingHours =>
         Set<ResourceOperatingHour>();
+    // Represents in-application notifications sent to users.
+    public DbSet<Notification> Notifications => Set<Notification>();
 }

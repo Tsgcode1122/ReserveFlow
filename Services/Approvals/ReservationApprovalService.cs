@@ -94,9 +94,10 @@ public sealed class ReservationApprovalService(
                 cancellationToken);
 
         var reservation = await dbContext.Reservations
-            .SingleOrDefaultAsync(
-                reservation => reservation.Id == reservationId,
-                cancellationToken);
+     .Include(reservation => reservation.Resource)
+     .SingleOrDefaultAsync(
+         reservation => reservation.Id == reservationId,
+         cancellationToken);
 
         if (reservation is null)
         {
@@ -119,9 +120,34 @@ public sealed class ReservationApprovalService(
             ? null
             : note.Trim();
 
+        var wasApproved = decision == ReservationStatus.Confirmed;
+
+        // Create a notification for the user who submitted the reservation.
+        var notification = new Notification
+        {
+            UserId = reservation.UserId,
+            ReservationId = reservation.Id,
+
+            Type = wasApproved
+                ? NotificationType.ReservationApproved
+                : NotificationType.ReservationRejected,
+
+            Title = wasApproved
+                ? "Reservation approved"
+                : "Reservation rejected",
+
+            Message = wasApproved
+                ? $"Your reservation for {reservation.Resource.Name} was approved."
+                : $"Your reservation for {reservation.Resource.Name} was rejected."
+        };
+
+        // Add the new notification to the database context.
+        dbContext.Notifications.Add(notification);
+
+        // Save both the reservation decision and notification together.
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var message = decision == ReservationStatus.Confirmed
+        var message = wasApproved
             ? "The reservation was approved."
             : "The reservation was rejected.";
 

@@ -48,4 +48,7 @@ public class Reservation
 
     [MaxLength(500)]
     public string? ApprovalNote { get; set; }
+    // Contains notifications generated for this reservation.
+    public ICollection<Notification> Notifications { get; set; }
+        = new List<Notification>();
 }

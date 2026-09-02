@@ -1,0 +1,196 @@
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using ReserveFlow.Data.Entities
+@using ReserveFlow.Services.Notifications
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject INotificationService NotificationService
+@inject NavigationManager NavigationManager
+<div class="notification-menu">
+    <button type="button" class="notification-button" aria-label="@GetButtonLabel()" aria-expanded="@isOpen"
+            @onclick="ToggleMenuAsync">
+        🔔
+
+        @if (notifications.Count > 0)
+        {
+            <span class="notification-count">
+                @notifications.Count
+            </span>
+        }
+    </button>
+
+    @if (isOpen)
+    {
+        <section class="notification-panel" aria-label="Notifications">
+            <div class="notification-header">
+                <h2>Notifications</h2>
+
+                @if (notifications.Count > 0)
+                {
+                    <button type="button" @onclick="MarkAllAsReadAsync">
+                        Mark all as read
+                    </button>
+                }
+            </div>
+
+            @if (isLoading)
+            {
+                <p class="notification-empty">
+                    Loading notifications...
+                </p>
+            }
+            else if (notifications.Count == 0)
+            {
+                <p class="notification-empty">
+                    You have no unread notifications.
+                </p>
+            }
+            else
+            {
+                <div class="notification-list">
+                    @foreach (var notification in notifications)
+                    {
+                        <article class="notification-item">
+                            <strong>@notification.Title</strong>
+                            <p>@notification.Message</p>
+
+                            <div class="notification-footer">
+                                <time datetime="@notification.CreatedAt.ToString("O")">
+                                    @FormatCreatedAt(notification.CreatedAt)
+                                </time>
+
+                                <button type="button" @onclick="() => OpenNotificationAsync(notification)">
+                                    View booking
+                                </button>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private List<Notification> notifications = [];
+    private string? userId;
+    private bool isOpen;
+    private bool isLoading;
+
+    /// <summary>
+    /// Obtains the signed-in user's ID. Notifications are loaded when
+    /// the user first opens the menu.
+    /// </summary>
+    /// <summary>
+    /// Gets the signed-in user's ID and immediately loads their unread
+    /// notifications so the bell count is visible before opening the menu.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        var authenticationState =
+            await AuthenticationStateProvider.GetAuthenticationStateAsync();
+
+        userId = authenticationState.User.FindFirstValue(
+            ClaimTypes.NameIdentifier);
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            await LoadNotificationsAsync();
+        }
+    }
+
+    /// <summary>
+    /// Opens or closes the menu and retrieves the latest unread records.
+    /// </summary>
+    private async Task ToggleMenuAsync()
+    {
+        isOpen = !isOpen;
+
+        if (isOpen)
+        {
+            await LoadNotificationsAsync();
+        }
+    }
+
+    private async Task LoadNotificationsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return;
+        }
+
+        isLoading = true;
+
+        notifications = (await NotificationService.GetUnreadAsync(userId))
+            .ToList();
+
+        isLoading = false;
+    }
+
+    /// <summary>
+    /// Marks the selected notification as read and removes it from the
+    /// unread notification list.
+    /// </summary>
+    /// <summary>
+    /// Marks the notification as read and opens the related booking page.
+    /// </summary>
+    private async Task OpenNotificationAsync(Notification notification)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return;
+        }
+
+        var succeeded = await NotificationService.MarkAsReadAsync(
+            notification.Id,
+            userId);
+
+        if (!succeeded)
+        {
+            return;
+        }
+
+        notifications.Remove(notification);
+
+        NavigationManager.NavigateTo("/bookings");
+    }
+
+    private async Task MarkAllAsReadAsync()
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return;
+        }
+
+        await NotificationService.MarkAllAsReadAsync(userId);
+        notifications.Clear();
+    }
+
+    private string GetButtonLabel() =>
+        notifications.Count == 0
+            ? "Notifications"
+            : $"{notifications.Count} unread notifications";
+
+    private static string FormatCreatedAt(DateTimeOffset createdAt)
+    {
+        var elapsed = DateTimeOffset.UtcNow - createdAt;
+
+        if (elapsed.TotalMinutes < 1)
+        {
+            return "Just now";
+        }
+
+        if (elapsed.TotalHours < 1)
+        {
+            return $"{(int)elapsed.TotalMinutes} minutes ago";
+        }
+
+        if (elapsed.TotalDays < 1)
+        {
+            return $"{(int)elapsed.TotalHours} hours ago";
+        }
+
+        return createdAt.ToString("MMM d, yyyy");
+    }
+}

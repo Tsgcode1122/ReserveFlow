@@ -9,7 +9,7 @@ using ReserveFlow.Data.Seed;
 using ReserveFlow.Services.Reviews;
 using ReserveFlow.Services.Availability;
 using ReserveFlow.Services.Approvals;
-
+using ReserveFlow.Services.Notifications;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -63,6 +63,9 @@ builder.Services.AddScoped<IAvailabilityService, AvailabilityService>();
 builder.Services.AddScoped<
     IReservationApprovalService,
     ReservationApprovalService>();
+// Provides notification retrieval and read-status operations.
+builder.Services.AddScoped<INotificationService, NotificationService>();
+
 
 
 var app = builder.Build();

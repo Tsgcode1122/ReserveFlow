@@ -16,4 +16,7 @@ public class ApplicationUser : IdentityUser
     // Contains reservation decisions made by this user as a manager.
     public ICollection<Reservation> ReviewedReservations { get; set; }
         = new List<Reservation>();
+    // Contains notifications sent to this user.
+    public ICollection<Notification> Notifications { get; set; }
+        = new List<Notification>();
 }
