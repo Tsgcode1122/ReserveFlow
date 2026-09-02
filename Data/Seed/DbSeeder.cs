@@ -1,7 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using ReserveFlow.Data.Entities;
 using ReserveFlow.Data.Enums;
-
+using Microsoft.AspNetCore.Identity;
+using ReserveFlow.Authorization;
 namespace ReserveFlow.Data.Seed;
 
 public static class DbSeeder
@@ -18,7 +19,8 @@ public static class DbSeeder
 
         var dbContext =
             scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
+        await SeedRolesAsync(scope.ServiceProvider);
+        await SeedDevelopmentUserRolesAsync(scope.ServiceProvider);
         // Stop if the sample resources were previously inserted.
         if (await dbContext.Resources.AnyAsync())
         {
@@ -175,6 +177,7 @@ public static class DbSeeder
             focusPod,
             projector,
             fleetVan);
+        // Ensures the application's required Identity roles exist.
 
         await dbContext.SaveChangesAsync();
         await SeedPolicyNoticesAsync(dbContext);
@@ -308,5 +311,83 @@ public static class DbSeeder
         await dbContext.SaveChangesAsync();
         await SeedPolicyNoticesAsync(dbContext);
         await SeedOperatingHoursAsync(dbContext);
+    }
+    /// <summary>
+    /// Creates the application roles when they do not already exist.
+    /// </summary>
+    private static async Task SeedRolesAsync(IServiceProvider services)
+
+    {
+        var roleManager =
+            services.GetRequiredService<RoleManager<IdentityRole>>();
+
+        foreach (var roleName in AppRoles.All)
+        {
+            if (!await roleManager.RoleExistsAsync(roleName))
+            {
+                var result = await roleManager.CreateAsync(
+                    new IdentityRole(roleName));
+
+                if (!result.Succeeded)
+                {
+                    var errors = string.Join(
+                        "; ",
+                        result.Errors.Select(error => error.Description));
+
+                    throw new InvalidOperationException(
+                        $"Could not create role '{roleName}': {errors}");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Assigns StandardUser to existing accounts and optionally promotes
+    /// one development account to ResourceManager using User Secrets.
+    /// </summary>
+    /// 
+
+    private static async Task SeedDevelopmentUserRolesAsync(
+        IServiceProvider services)
+    {
+        var userManager =
+            services.GetRequiredService<UserManager<ApplicationUser>>();
+
+        var configuration =
+            services.GetRequiredService<IConfiguration>();
+
+        var users = await userManager.Users.ToListAsync();
+
+        foreach (var user in users)
+        {
+            var roles = await userManager.GetRolesAsync(user);
+
+            if (roles.Count == 0)
+            {
+                await userManager.AddToRoleAsync(
+                    user,
+                    AppRoles.StandardUser);
+            }
+        }
+
+        var managerEmail =
+            configuration["Development:ManagerEmail"];
+
+        if (string.IsNullOrWhiteSpace(managerEmail))
+        {
+            return;
+        }
+
+        var manager = await userManager.FindByEmailAsync(managerEmail);
+
+        if (manager is not null &&
+            !await userManager.IsInRoleAsync(
+                manager,
+                AppRoles.ResourceManager))
+        {
+            await userManager.AddToRoleAsync(
+                manager,
+                AppRoles.ResourceManager);
+        }
     }
 }

@@ -1,0 +1,254 @@
+@page "/bookings"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using ReserveFlow.Data
+@using ReserveFlow.Data.Entities
+@using ReserveFlow.Data.Enums
+@using ReserveFlow.Services.Reservations
+
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IReservationService ReservationService
+@inject IJSRuntime JavaScript
+
+<PageTitle>My Bookings</PageTitle>
+
+<h1>My Bookings</h1>
+<p>View and manage your resource reservations.</p>
+
+@if (!string.IsNullOrWhiteSpace(resultMessage))
+{
+    <div class="alert @resultCssClass" role="alert">
+        @resultMessage
+    </div>
+}
+
+<div class="row mb-4">
+    <div class="col-md-7">
+        <label class="form-label" for="booking-search">
+            Search bookings
+        </label>
+
+        <input id="booking-search" class="form-control" placeholder="Search by resource, purpose, or location"
+               @bind="searchTerm" @bind:event="oninput" />
+    </div>
+
+    <div class="col-md-5">
+        <label class="form-label" for="status-filter">
+            Status
+        </label>
+
+        <select id="status-filter" class="form-select" @onchange="HandleStatusChange">
+            <option value="">All statuses</option>
+
+            @foreach (var status in Enum.GetValues<ReservationStatus>())
+            {
+                <option value="@status">@status</option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (isLoading)
+{
+    <p>Loading bookings...</p>
+}
+else if (!FilteredReservations.Any())
+{
+    <div class="alert alert-info">
+        No reservations match the selected filters.
+    </div>
+}
+else
+{
+    <p>@FilteredReservations.Count() bookings found</p>
+
+    <div class="list-group">
+        @foreach (var reservation in FilteredReservations)
+        {
+            var localStart = ConvertToResourceTime(
+                reservation.StartTime,
+                reservation.Resource.Location.TimeZoneId);
+
+            var localEnd = ConvertToResourceTime(
+                reservation.EndTime,
+                reservation.Resource.Location.TimeZoneId);
+
+            <article class="list-group-item py-3">
+                <div class="d-flex justify-content-between gap-3">
+                    <div>
+                        <div class="d-flex align-items-center gap-2">
+                            <h2 class="h5 mb-0">
+                                <a href="@($"/resources/{reservation.ResourceId}")">
+                                    @reservation.Resource.Name
+                                </a>
+                            </h2>
+
+                            <span class="badge @GetStatusCssClass(reservation.Status)">
+                                @reservation.Status
+                            </span>
+                        </div>
+
+                        <p class="mb-1">@reservation.Purpose</p>
+
+                        <div>
+                            <span>@localStart.ToString("ddd, MMM d, yyyy")</span>
+                            <span>
+                                @localStart.ToString("h:mm tt")
+                                –
+                                @localEnd.ToString("h:mm tt")
+                            </span>
+                            <span>@reservation.Resource.Location.Name</span>
+                        </div>
+                    </div>
+
+                    @if (CanCancel(reservation))
+                    {
+                        <button type="button" class="btn btn-outline-danger btn-sm"
+                                @onclick="() => CancelReservationAsync(reservation)">
+                            Cancel
+                        </button>
+                    }
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private List<Reservation> reservations = [];
+    private string? userId;
+    private string searchTerm = string.Empty;
+    private ReservationStatus? selectedStatus;
+    private bool isLoading = true;
+    private string? resultMessage;
+    private string resultCssClass = "alert-success";
+
+    /// <summary>
+    /// Gets the signed-in user's ID and loads only their reservations.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        var authenticationState =
+            await AuthenticationStateProvider.GetAuthenticationStateAsync();
+
+        userId = authenticationState.User.FindFirstValue(
+            ClaimTypes.NameIdentifier);
+
+        await LoadReservationsAsync();
+    }
+
+    /// <summary>
+    /// Loads booking data with its related resource and location.
+    /// </summary>
+    private async Task LoadReservationsAsync()
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            isLoading = false;
+            return;
+        }
+
+        await using var dbContext =
+            await DbContextFactory.CreateDbContextAsync();
+
+        reservations = await dbContext.Reservations
+            .AsNoTracking()
+            .Include(reservation => reservation.Resource)
+                .ThenInclude(resource => resource.Location)
+            .Where(reservation => reservation.UserId == userId)
+            .OrderByDescending(reservation => reservation.StartTime)
+            .ToListAsync();
+
+        isLoading = false;
+    }
+
+    private IEnumerable<Reservation> FilteredReservations =>
+        reservations.Where(reservation =>
+            (!selectedStatus.HasValue ||
+             reservation.Status == selectedStatus.Value) &&
+            (string.IsNullOrWhiteSpace(searchTerm) ||
+             reservation.Resource.Name.Contains(
+                 searchTerm,
+                 StringComparison.OrdinalIgnoreCase) ||
+             reservation.Purpose.Contains(
+                 searchTerm,
+                 StringComparison.OrdinalIgnoreCase) ||
+             reservation.Resource.Location.Name.Contains(
+                 searchTerm,
+                 StringComparison.OrdinalIgnoreCase)));
+
+    /// <summary>
+    /// Requests confirmation before cancelling the selected reservation.
+    /// </summary>
+    private async Task CancelReservationAsync(Reservation reservation)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return;
+        }
+
+        var confirmed = await JavaScript.InvokeAsync<bool>(
+            "confirm",
+            $"Cancel your reservation for {reservation.Resource.Name}?");
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        var result = await ReservationService.CancelAsync(
+            reservation.Id,
+            userId);
+
+        resultMessage = result.Message;
+        resultCssClass = result.Succeeded
+            ? "alert-success"
+            : "alert-danger";
+
+        if (result.Succeeded)
+        {
+            await LoadReservationsAsync();
+        }
+    }
+
+    private void HandleStatusChange(ChangeEventArgs eventArgs)
+    {
+        var value = eventArgs.Value?.ToString();
+
+        selectedStatus =
+            Enum.TryParse<ReservationStatus>(value, out var status)
+                ? status
+                : null;
+    }
+
+    private static bool CanCancel(Reservation reservation) =>
+        reservation.StartTime > DateTimeOffset.UtcNow &&
+        reservation.Status is
+            ReservationStatus.Pending or
+            ReservationStatus.Confirmed;
+
+    private static DateTimeOffset ConvertToResourceTime(
+        DateTimeOffset utcTime,
+        string timeZoneId)
+    {
+        var timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        return TimeZoneInfo.ConvertTime(utcTime, timeZone);
+    }
+
+    private static string GetStatusCssClass(
+        ReservationStatus status) =>
+        status switch
+        {
+            ReservationStatus.Confirmed => "text-bg-success",
+            ReservationStatus.Pending => "text-bg-warning",
+            ReservationStatus.Rejected => "text-bg-danger",
+            ReservationStatus.Cancelled => "text-bg-secondary",
+            ReservationStatus.CheckedIn => "text-bg-primary",
+            ReservationStatus.Completed => "text-bg-success",
+            ReservationStatus.NoShow => "text-bg-dark",
+            _ => "text-bg-secondary"
+        };
+}

@@ -8,7 +8,7 @@ using ReserveFlow.Services.Reservations;
 using ReserveFlow.Data.Seed;
 using ReserveFlow.Services.Reviews;
 using ReserveFlow.Services.Availability;
-
+using ReserveFlow.Services.Approvals;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -44,6 +44,8 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
         options.SignIn.RequireConfirmedAccount = true;
         options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
     })
+    // Adds role management to ASP.NET Core Identity.
+    .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddSignInManager()
     .AddDefaultTokenProviders();
@@ -57,7 +59,10 @@ builder.Services.AddScoped<IReservationService, ReservationService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 // Calculates monthly availability for the resource calendar.
 builder.Services.AddScoped<IAvailabilityService, AvailabilityService>();
-
+// Provides manager-only reservation approval and rejection logic.
+builder.Services.AddScoped<
+    IReservationApprovalService,
+    ReservationApprovalService>();
 
 
 var app = builder.Build();

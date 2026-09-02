@@ -38,4 +38,14 @@ public class Reservation
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     // A completed reservation can produce no more than one review.
     public ResourceReview? Review { get; set; }
+    // Identifies the manager who approved or rejected the reservation.
+    public string? ReviewedById { get; set; }
+
+    public ApplicationUser? ReviewedBy { get; set; }
+
+    // Records when the manager made the approval decision.
+    public DateTimeOffset? ReviewedAt { get; set; }
+
+    [MaxLength(500)]
+    public string? ApprovalNote { get; set; }
 }

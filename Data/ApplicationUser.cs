@@ -13,4 +13,7 @@ public class ApplicationUser : IdentityUser
     // Contains reviews submitted by this user.
     public ICollection<ResourceReview> Reviews { get; set; }
         = new List<ResourceReview>();
+    // Contains reservation decisions made by this user as a manager.
+    public ICollection<Reservation> ReviewedReservations { get; set; }
+        = new List<Reservation>();
 }

@@ -9,4 +9,11 @@ public interface IReservationService
         CreateReservationRequest request,
         string userId,
         CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Cancels an eligible reservation belonging to the specified user.
+    /// </summary>
+    Task<ReservationResult> CancelAsync(
+        Guid reservationId,
+        string userId,
+        CancellationToken cancellationToken = default);
 }

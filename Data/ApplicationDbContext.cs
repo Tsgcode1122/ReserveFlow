@@ -102,6 +102,15 @@ public class ApplicationDbContext(
                 schedule.DayOfWeek
             })
             .IsUnique();
+
+        // Connects a reservation decision to the manager who made it.
+        // The relationship is optional because new reservations have not
+        // yet been reviewed.
+        builder.Entity<Reservation>()
+            .HasOne(reservation => reservation.ReviewedBy)
+            .WithMany(user => user.ReviewedReservations)
+            .HasForeignKey(reservation => reservation.ReviewedById)
+            .OnDelete(DeleteBehavior.Restrict);
     }
     // Represents all resource booking records.
     public DbSet<Reservation> Reservations => Set<Reservation>();

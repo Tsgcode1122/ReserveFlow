@@ -5,11 +5,12 @@ using ReserveFlow.Data.Enums;
 
 namespace ReserveFlow.Services.Reservations;
 
-public sealed class ReservationService(ApplicationDbContext dbContext)
+public sealed class ReservationService(
+    IDbContextFactory<ApplicationDbContext> dbContextFactory)
     : IReservationService
 {
-    private readonly ApplicationDbContext _dbContext = dbContext;
-
+    private readonly IDbContextFactory<ApplicationDbContext>
+        _dbContextFactory = dbContextFactory;
     /// <summary>
     /// Validates the booking request, checks for scheduling conflicts,
     /// determines its initial status, and saves it to PostgreSQL.
@@ -39,9 +40,11 @@ public sealed class ReservationService(ApplicationDbContext dbContext)
                 false,
                 "The end time must be later than the start time.");
         }
-
+        // A fresh context is created for this individual operation.
+        await using var dbContext =
+            await _dbContextFactory.CreateDbContextAsync(cancellationToken);
         // Loads only an active resource matching the selected ID.
-        var resource = await _dbContext.Resources
+        var resource = await dbContext.Resources
             .SingleOrDefaultAsync(
                 resource =>
                     resource.Id == request.ResourceId &&
@@ -79,7 +82,7 @@ public sealed class ReservationService(ApplicationDbContext dbContext)
 
         // Two time ranges overlap when the existing reservation starts
         // before the requested end and ends after the requested start.
-        var hasConflict = await _dbContext.Reservations.AnyAsync(
+        var hasConflict = await dbContext.Reservations.AnyAsync(
             reservation =>
                 reservation.ResourceId == request.ResourceId &&
                 blockingStatuses.Contains(reservation.Status) &&
@@ -112,13 +115,73 @@ public sealed class ReservationService(ApplicationDbContext dbContext)
             Status = initialStatus
         };
 
-        _dbContext.Reservations.Add(reservation);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        dbContext.Reservations.Add(reservation);
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         var message = initialStatus == ReservationStatus.Pending
             ? "Your reservation was submitted for approval."
             : "Your reservation was confirmed.";
 
         return new ReservationResult(true, message, reservation);
+    }
+    /// <summary>
+    /// Cancels a future pending or confirmed reservation after verifying
+    /// that it belongs to the signed-in user.
+    /// </summary>
+    public async Task<ReservationResult> CancelAsync(
+        Guid reservationId,
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var dbContext =
+            await _dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var reservation = await dbContext.Reservations
+            .SingleOrDefaultAsync(
+                reservation => reservation.Id == reservationId,
+                cancellationToken);
+
+        if (reservation is null)
+        {
+            return new ReservationResult(
+                false,
+                "The reservation could not be found.");
+        }
+
+        if (reservation.UserId != userId)
+        {
+            return new ReservationResult(
+                false,
+                "You cannot cancel another user's reservation.");
+        }
+
+        var cancellableStatuses = new[]
+        {
+        ReservationStatus.Pending,
+        ReservationStatus.Confirmed
+    };
+
+        if (!cancellableStatuses.Contains(reservation.Status))
+        {
+            return new ReservationResult(
+                false,
+                "This reservation can no longer be cancelled.");
+        }
+
+        if (reservation.StartTime <= DateTimeOffset.UtcNow)
+        {
+            return new ReservationResult(
+                false,
+                "A reservation cannot be cancelled after it has started.");
+        }
+
+        reservation.Status = ReservationStatus.Cancelled;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return new ReservationResult(
+            true,
+            "The reservation was cancelled.",
+            reservation);
     }
 }

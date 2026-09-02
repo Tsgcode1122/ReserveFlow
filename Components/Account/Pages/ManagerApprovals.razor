@@ -1,0 +1,298 @@
+@page "/manager/approvals"
+@rendermode InteractiveServer
+
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(
+    Roles = AppRoles.ManagerOrAdministrator)]
+
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using ReserveFlow.Authorization
+@using ReserveFlow.Data
+@using ReserveFlow.Data.Entities
+@using ReserveFlow.Data.Enums
+@using ReserveFlow.Services.Approvals
+
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IReservationApprovalService ApprovalService
+@inject ILogger<ManagerApprovals> Logger
+<PageTitle>Pending Approvals</PageTitle>
+
+<h1>Pending Approvals</h1>
+<p>Review resource reservation requests that require approval.</p>
+
+@if (!string.IsNullOrWhiteSpace(resultMessage))
+{
+    <div class="alert @resultCssClass" role="alert">
+        @resultMessage
+    </div>
+}
+
+@if (isLoading)
+{
+    <p>Loading pending reservations...</p>
+}
+else if (approvalItems.Count == 0)
+{
+    <div class="alert alert-info">
+        There are no reservations awaiting approval.
+    </div>
+}
+else
+{
+    <p>@approvalItems.Count pending approvals</p>
+
+    <div class="d-grid gap-3">
+        @foreach (var item in approvalItems)
+        {
+            var reservation = item.Reservation;
+
+            var localStart = ConvertToResourceTime(
+                reservation.StartTime,
+                reservation.Resource.Location.TimeZoneId);
+
+            var localEnd = ConvertToResourceTime(
+                reservation.EndTime,
+                reservation.Resource.Location.TimeZoneId);
+
+            <article class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between gap-3">
+                        <div>
+                            <h2 class="h5">@reservation.Resource.Name</h2>
+
+                            <p>@reservation.Purpose</p>
+
+                            <dl>
+                                <dt>Requested by</dt>
+                                <dd>
+                                    @(reservation.User.Email
+                                        ?? reservation.User.UserName
+                                        ?? "Unknown user")
+                                </dd>
+
+                                <dt>Date</dt>
+                                <dd>
+                                    @localStart.ToString("dddd, MMMM d, yyyy")
+                                </dd>
+
+                                <dt>Time</dt>
+                                <dd>
+                                    @localStart.ToString("h:mm tt")
+                                    –
+                                    @localEnd.ToString("h:mm tt")
+                                </dd>
+
+                                <dt>Location</dt>
+                                <dd>@reservation.Resource.Location.Name</dd>
+
+                                <dt>Attendees</dt>
+                                <dd>@reservation.AttendeeCount</dd>
+                            </dl>
+                        </div>
+
+                        <span class="badge text-bg-warning align-self-start">
+                            Pending
+                        </span>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label"
+                               for="@($"note-{reservation.Id}")">
+                            Decision note
+                        </label>
+
+                        <textarea id="@($"note-{reservation.Id}")"
+                                  class="form-control"
+                                  rows="2"
+                                  placeholder="Optional for approval; required for rejection"
+                                  @bind="item.Note">
+                        </textarea>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="button"
+                                class="btn btn-success"
+                                disabled="@(busyReservationId == reservation.Id)"
+                                @onclick="() => ApproveAsync(item)">
+                            Approve
+                        </button>
+
+                        <button type="button"
+                                class="btn btn-danger"
+                                disabled="@(busyReservationId == reservation.Id)"
+                                @onclick="() => RejectAsync(item)">
+                            Reject
+                        </button>
+                    </div>
+                </div>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    private List<PendingApprovalItem> approvalItems = [];
+    private string? managerUserId;
+    private bool isLoading = true;
+    private Guid? busyReservationId;
+    private string? resultMessage;
+    private string resultCssClass = "alert-success";
+
+    /// <summary>
+    /// Gets the manager's Identity ID and loads pending reservations.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        var authenticationState =
+            await AuthenticationStateProvider.GetAuthenticationStateAsync();
+
+        managerUserId = authenticationState.User.FindFirstValue(
+            ClaimTypes.NameIdentifier);
+
+        await LoadPendingApprovalsAsync();
+    }
+
+    /// <summary>
+    /// Loads pending reservations with the user, resource, and location
+    /// information needed by the manager.
+    /// </summary>
+    private async Task LoadPendingApprovalsAsync()
+    {
+        await using var dbContext =
+            await DbContextFactory.CreateDbContextAsync();
+
+        var reservations = await dbContext.Reservations
+            .AsNoTracking()
+            .Include(reservation => reservation.User)
+            .Include(reservation => reservation.Resource)
+                .ThenInclude(resource => resource.Location)
+            .Where(reservation =>
+                reservation.Status == ReservationStatus.Pending)
+            .OrderBy(reservation => reservation.StartTime)
+            .ToListAsync();
+
+        approvalItems = reservations
+            .Select(reservation => new PendingApprovalItem
+            {
+                Reservation = reservation
+            })
+            .ToList();
+
+        isLoading = false;
+    }
+
+    /// <summary>
+    /// Approves the selected reservation and refreshes the queue.
+    /// </summary>
+    private async Task ApproveAsync(PendingApprovalItem item)
+{
+    if (string.IsNullOrWhiteSpace(managerUserId))
+    {
+        resultMessage = "Your manager account could not be identified.";
+        resultCssClass = "alert-danger";
+        return;
+    }
+
+    busyReservationId = item.Reservation.Id;
+
+    try
+    {
+        var result = await ApprovalService.ApproveAsync(
+            item.Reservation.Id,
+            managerUserId,
+            item.Note);
+
+        await HandleResultAsync(result);
+    }
+    catch (Exception exception)
+    {
+        Logger.LogError(
+            exception,
+            "Failed to approve reservation {ReservationId}.",
+            item.Reservation.Id);
+
+        resultMessage =
+            "An unexpected error occurred while approving the reservation.";
+
+        resultCssClass = "alert-danger";
+    }
+    finally
+    {
+        busyReservationId = null;
+    }
+}
+    /// <summary>
+    /// Rejects the reservation. The service requires a reason.
+    /// </summary>
+   private async Task RejectAsync(PendingApprovalItem item)
+{
+    if (string.IsNullOrWhiteSpace(managerUserId))
+    {
+        resultMessage = "Your manager account could not be identified.";
+        resultCssClass = "alert-danger";
+        return;
+    }
+
+    busyReservationId = item.Reservation.Id;
+
+    try
+    {
+        var result = await ApprovalService.RejectAsync(
+            item.Reservation.Id,
+            managerUserId,
+            item.Note);
+
+        await HandleResultAsync(result);
+    }
+    catch (Exception exception)
+    {
+        Logger.LogError(
+            exception,
+            "Failed to reject reservation {ReservationId}.",
+            item.Reservation.Id);
+
+        resultMessage =
+            "An unexpected error occurred while rejecting the reservation.";
+
+        resultCssClass = "alert-danger";
+    }
+    finally
+    {
+        busyReservationId = null;
+    }
+}
+    /// <summary>
+    /// Displays the decision result and reloads successfully processed
+    /// reservations so they disappear from the pending queue.
+    /// </summary>
+    private async Task HandleResultAsync(ApprovalResult result)
+    {
+        resultMessage = result.Message;
+        resultCssClass = result.Succeeded
+            ? "alert-success"
+            : "alert-danger";
+
+        busyReservationId = null;
+
+        if (result.Succeeded)
+        {
+            await LoadPendingApprovalsAsync();
+        }
+    }
+
+    private static DateTimeOffset ConvertToResourceTime(
+        DateTimeOffset utcTime,
+        string timeZoneId)
+    {
+        var timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        return TimeZoneInfo.ConvertTime(utcTime, timeZone);
+    }
+
+    private sealed class PendingApprovalItem
+    {
+        public required Reservation Reservation { get; init; }
+
+        public string Note { get; set; } = string.Empty;
+    }
+}
